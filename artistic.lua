@@ -15,6 +15,7 @@ cmd:text()
 cmd:text('Options:')
 cmd:option('-seed', 1337, 'seed')
 cmd:option('-threads', 4, 'threads')
+cmd:option('-layer', 6, '[1,6]')
 
 cmd:text()
 opt = cmd:parse(arg or {})
@@ -124,26 +125,56 @@ end
 ------------------------------------------------------------------------
 -- Main
 
-layer = {1, 4, 7, 9, 11, 13}
-l = layer[1]
+output_layer = {2, 5, 8, 10, 12, 14}
+l = output_layer[opt.layer]
+
+function remove(self, index)
+   index = index or #self.modules
+   if index > #self.modules or index < 1 then
+      error"index out of range"
+   end
+   table.remove(self.modules, index)
+   if #self.modules > 0 then
+       self.output = self.modules[#self.modules].output
+       self.gradInput = self.modules[1].gradInput
+   else
+       self.output = torch.Tensor()
+       self.gradInput = torch.Tensor()
+   end
+end
+
+local size = #model.modules
+print(l, size)
+for i = l, size-1 do
+    remove(model)
+end
+
+print(model)
 
 criterion = nn.ArtistContentCriterion()
 
-input_origin = prepare('data/bee.jpg')
+input_origin = prepare('data/fraise.jpg')
 -- input_gener  = prepare('data/fraise.jpg')
-input_gener  = torch.Tensor(3,221,221):fill(1)
+input_gener  = torch.rand(3,221,221)
 
 activ_origin = model:forward(input_origin):clone()
-activ_gener  = model:forward(input_gener):clone()
 
-loss = criterion:forward(activ_origin, activ_gener)
-print('loss', loss)
+local alpha = -0.02
+for i = 1, 50 do
+    activ_gener  = model:forward(input_gener):clone()
+    print('activ_gener', activ_gener:size())
+    loss = criterion:forward(activ_origin, activ_gener)
+    print('loss', loss)
+    dloss_dag = criterion:backward(activ_origin, activ_gener)
+    print('dloss_dag', dloss_dag:size())
+    g = model:updateGradInput(input_gener, dloss_dag)
+    print('g', g:size())
+    input_gener:add(alpha, g)--:mul(0.5/torch.abs(g):mean()))
+    image.save('rslt/fraise3_layer'..l..'_final.jpg', input_gener)
+end
 
-df_di = criterion:backward(activ_origin, activ_gener)
-g = model:updateGradInput(input_origin, df_di)
-input_gener:add(g:mul(10/torch.abs(g):mean()))
 
-image.save('rslt/bee-layer'..l..'.jpg', input_gener)
+
 
 
 
